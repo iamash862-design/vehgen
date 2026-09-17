@@ -16,7 +16,7 @@ from telegram.ext import (
 # ═══════════════════════════════════════════════════════
 #  ⚙️  CONFIG
 # ═══════════════════════════════════════════════════════
-BOT_TOKEN = "8044566457:AAGgWN9EqoRjUsrnMK8OmaFfnrffPs_-6Io"
+BOT_TOKEN = "8945339641:AAHMCE0qtJX6TIlit9fMlWr-mVhnLploovw"
 ALLOWED_USERS = []          # leave empty for anyone, or [123456789]
 # ═══════════════════════════════════════════════════════
 
