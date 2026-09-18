@@ -20,12 +20,11 @@ from telegram.ext import (
 # ═══════════════════════════════════════════════════════
 #  ⚙️  CONFIG
 # ═══════════════════════════════════════════════════════
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "PASTE_YOUR_TOKEN_HERE")
+BOT_TOKEN = "8945339641:AAHMCE0qtJX6TIlit9fMlWr-mVhnLploovw"
 ALLOWED_USERS = []
 
 NUM_START = 0
 NUM_END = 9999
-STATE_FILE = "bulk_state.json"
 # ═══════════════════════════════════════════════════════
 
 logging.basicConfig(
@@ -48,7 +47,6 @@ def parse_series(series):
 
 
 def build_combined_file(series_list):
-    """Generate one big file with all series 0000-9999."""
     lines = []
     for series in series_list:
         parsed = parse_series(series)
@@ -60,9 +58,6 @@ def build_combined_file(series_list):
     return lines
 
 
-# ─────────────────────────────────────────────────────
-#  Commands
-# ─────────────────────────────────────────────────────
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_allowed(update.effective_user.id):
         return
@@ -100,9 +95,6 @@ async def bulk_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ─────────────────────────────────────────────────────
-#  Handle series list input
-# ─────────────────────────────────────────────────────
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_allowed(update.effective_user.id):
         return
@@ -130,7 +122,6 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-    # Build the file
     try:
         all_lines = build_combined_file(valid)
     except Exception as e:
@@ -140,7 +131,6 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     content = "\n".join(all_lines)
     size_mb = len(content) / (1024 * 1024)
 
-    # Filename with timestamp
     from datetime import datetime
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     filename = f"veh_{len(valid)}series_{ts}.txt"
@@ -157,7 +147,6 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(summary, parse_mode="Markdown")
 
-    # Send file
     try:
         buf = io.BytesIO(content.encode("utf-8"))
         buf.name = filename
