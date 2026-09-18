@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """
-VEH Bulk Generator Bot
-Send multiple series → bot sends ONE combined file with all numbers.
+VEH Bulk Generator Bot — One file per series.
+Send series list → bot sends one .txt per series (0000-9999 each).
 """
 
 import os
 import re
 import io
-import json
 import asyncio
 import logging
-from pathlib import Path
+from datetime import datetime
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -46,15 +45,14 @@ def parse_series(series):
     return m.groups()
 
 
-def build_combined_file(series_list):
+def build_series_file(series):
+    parsed = parse_series(series)
+    if not parsed:
+        return None
+    state, rto, ser = parsed
     lines = []
-    for series in series_list:
-        parsed = parse_series(series)
-        if not parsed:
-            continue
-        state, rto, ser = parsed
-        for i in range(NUM_START, NUM_END + 1):
-            lines.append(f"{state}{rto}{ser}{i:04d}")
+    for i in range(NUM_START, NUM_END + 1):
+        lines.append(f"{state}{rto}{ser}{i:04d}")
     return lines
 
 
@@ -66,17 +64,19 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "🚗  *VEH Bulk Generator*\n"
         "━━━━━━━━━━━━━━━━━━━\n\n"
         "Send a list of series → bot sends back\n"
-        "*one combined file* with all numbers.\n\n"
-        "*Example*\n"
+        "*one file per series* (10,000 numbers each).\n\n"
+        "*Example input*\n"
         "```\n"
-        "JH01EW\n"
-        "JH02EE\n"
-        "JH03AC\n"
-        "JH04TA\n"
+        "GJ01WY\n"
+        "GJ01WW\n"
+        "GJ01WQ\n"
+        "GJ06RD\n"
         "```\n\n"
-        "Result:\n"
-        "📁 *1 file* — 40,000 lines\n"
-        "(`JH01EW0000`–`JH01EW9999` + `JH02EE0000`–`JH02EE9999` + ...)\n\n"
+        "*Example output*\n"
+        "📁 `GJ01WY.txt` — 10,000 lines\n"
+        "📁 `GJ01WW.txt` — 10,000 lines\n"
+        "📁 `GJ01WQ.txt` — 10,000 lines\n"
+        "📁 `GJ06RD.txt` — 10,000 lines\n\n"
         "*Commands*\n"
         "`/bulk` — start\n"
         "`/help` — this menu"
@@ -90,7 +90,7 @@ async def bulk_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "📋 *Send your series list* — one per line:\n\n"
-        "```\nJH01EW\nJH02EE\nJH03AC\nJH04TA\n```",
+        "```\nGJ01WY\nGJ01WW\nGJ01WQ\nGJ01WX\nGJ06RD\nGJ01WU\n```",
         parse_mode="Markdown"
     )
 
@@ -112,52 +112,58 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not valid:
         await update.message.reply_text(
             "❌ No valid series found.\n"
-            "Format: `JH01EW` (2 letters + 1-2 digits + 1-3 letters)",
+            "Format: `GJ01WY` (2 letters + 1-2 digits + 1-3 letters)",
             parse_mode="Markdown"
         )
         return
 
     await update.message.reply_text(
-        f"⏳ Generating *{len(valid)}* series × 10,000 = *{len(valid) * 10000:,}* lines...",
+        f"⏳ Generating *{len(valid)}* files × 10,000 lines each...\n"
+        f"📊 Total: *{len(valid) * 10000:,}* numbers",
         parse_mode="Markdown"
     )
 
-    try:
-        all_lines = build_combined_file(valid)
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: {str(e)[:100]}")
-        return
+    sent = 0
+    failed = 0
 
-    content = "\n".join(all_lines)
-    size_mb = len(content) / (1024 * 1024)
+    for series in valid:
+        numbers = build_series_file(series)
+        if not numbers:
+            failed += 1
+            continue
 
-    from datetime import datetime
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    filename = f"veh_{len(valid)}series_{ts}.txt"
+        content = "\n".join(numbers)
+        filename = f"{series}.txt"
+
+        try:
+            buf = io.BytesIO(content.encode("utf-8"))
+            buf.name = filename
+            await update.message.reply_document(
+                document=buf,
+                filename=filename,
+                caption=f"📁 *{filename}* — {len(numbers):,} lines"
+            )
+            sent += 1
+        except Exception as e:
+            logger.error(f"Send error for {series}: {e}")
+            await update.message.reply_text(f"❌ Failed: `{series}` — {str(e)[:80]}", parse_mode="Markdown")
+            failed += 1
+
+        # Small delay between files to avoid Telegram rate limit
+        await asyncio.sleep(1.2)
 
     summary = (
-        f"✅ *Generated*\n"
+        f"✅ *Bulk job complete!*\n"
         f"━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📋 Series: *{len(valid)}*\n"
-        f"📁 Lines: *{len(all_lines):,}*\n"
-        f"💾 Size: *{size_mb:.2f} MB*\n"
+        f"📁 Files sent: *{sent}*\n"
+        f"📊 Total lines: *{sent * 10000:,}*\n"
     )
     if invalid:
-        summary += f"⚠️ Skipped: *{len(invalid)}* invalid\n"
+        summary += f"⚠️ Invalid series skipped: *{len(invalid)}*\n"
+    if failed:
+        summary += f"❌ Failed to send: *{failed}*\n"
 
     await update.message.reply_text(summary, parse_mode="Markdown")
-
-    try:
-        buf = io.BytesIO(content.encode("utf-8"))
-        buf.name = filename
-        await update.message.reply_document(
-            document=buf,
-            filename=filename,
-            caption=f"📁 `{filename}` — {len(all_lines):,} lines"
-        )
-    except Exception as e:
-        logger.error(f"Send error: {e}")
-        await update.message.reply_text(f"❌ Send failed: {str(e)[:100]}")
 
 
 async def post_init(app: Application):
